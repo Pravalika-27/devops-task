@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     tools {
-        nodejs "node18"   // NodeJS tool installed in Jenkins
+        nodejs "node18"   // Matches the name you configured in Jenkins
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // DockerHub credentials ID
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // DockerHub credential ID
         AWS_REGION = 'us-east-1'
         ECS_CLUSTER = 'node-app-cluster'
         ECS_SERVICE = 'node-app-service'
@@ -25,24 +25,6 @@ pipeline {
             steps {
                 sh 'npm install'
                 sh 'npm test || echo "No tests found"'
-            }
-        }
-
-        stage('Install Docker & AWS CLI') {
-            steps {
-                // Install Docker and AWS CLI if missing
-                sh '''
-                if ! command -v docker >/dev/null 2>&1; then
-                    echo "Installing Docker..."
-                    apt-get update -y
-                    apt-get install -y docker.io
-                fi
-                if ! command -v aws >/dev/null 2>&1; then
-                    echo "Installing AWS CLI..."
-                    apt-get update -y
-                    apt-get install -y awscli
-                fi
-                '''
             }
         }
 
@@ -65,13 +47,15 @@ pipeline {
 
         stage('Deploy to ECS') {
             steps {
-                sh """
-                    aws ecs update-service \
-                        --cluster $ECS_CLUSTER \
-                        --service $ECS_SERVICE \
-                        --force-new-deployment \
-                        --region $AWS_REGION
-                """
+                // Using AWS Credentials Plugin
+                withAWS(credentials: 'aws_credentials', region: "${AWS_REGION}") {
+                    sh """
+                        aws ecs update-service \
+                            --cluster $ECS_CLUSTER \
+                            --service $ECS_SERVICE \
+                            --force-new-deployment
+                    """
+                }
             }
         }
     }
