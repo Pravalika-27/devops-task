@@ -1,10 +1,16 @@
 pipeline {
     agent any
 
+    tools {
+        nodejs "node18"   // 👈 Matches the name you configured in Jenkins
+    }
+
     environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // Jenkins credential ID for DockerHub
         AWS_REGION = 'us-east-1'
         ECS_CLUSTER = 'node-app-cluster'
         ECS_SERVICE = 'node-app-service'
+        TASK_DEFINITION = 'node-app-task'
         IMAGE_NAME = 'pravalika27/taskdev'
     }
 
@@ -18,16 +24,21 @@ pipeline {
         stage('Build & Test') {
             steps {
                 sh 'npm install'
-                sh 'npm test || echo "No tests available, skipping..."'
+                sh 'npm test || echo "No tests found"'
             }
         }
 
-        stage('Dockerize & Push') {
+        stage('Dockerize') {
+            steps {
+                sh "docker build -t $IMAGE_NAME:latest ."
+            }
+        }
+
+        stage('Push to DockerHub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh """
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker build -t $IMAGE_NAME:latest .
                         docker push $IMAGE_NAME:latest
                     """
                 }
@@ -36,15 +47,13 @@ pipeline {
 
         stage('Deploy to ECS') {
             steps {
-                withAWS(region: "${AWS_REGION}", credentials: 'aws_credentials') {
-                    sh """
-                        aws ecs update-service \
-                            --cluster $ECS_CLUSTER \
-                            --service $ECS_SERVICE \
-                            --force-new-deployment \
-                            --region $AWS_REGION
-                    """
-                }
+                sh """
+                    aws ecs update-service \
+                        --cluster $ECS_CLUSTER \
+                        --service $ECS_SERVICE \
+                        --force-new-deployment \
+                        --region $AWS_REGION
+                """
             }
         }
     }
