@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     tools {
-        nodejs "node18"   // 👈 Matches the name you configured in Jenkins
+        nodejs "node18"   // NodeJS tool installed in Jenkins
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // Jenkins credential ID for DockerHub
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')  // DockerHub credentials ID
         AWS_REGION = 'us-east-1'
         ECS_CLUSTER = 'node-app-cluster'
         ECS_SERVICE = 'node-app-service'
@@ -25,6 +25,24 @@ pipeline {
             steps {
                 sh 'npm install'
                 sh 'npm test || echo "No tests found"'
+            }
+        }
+
+        stage('Install Docker & AWS CLI') {
+            steps {
+                // Install Docker and AWS CLI if missing
+                sh '''
+                if ! command -v docker >/dev/null 2>&1; then
+                    echo "Installing Docker..."
+                    apt-get update -y
+                    apt-get install -y docker.io
+                fi
+                if ! command -v aws >/dev/null 2>&1; then
+                    echo "Installing AWS CLI..."
+                    apt-get update -y
+                    apt-get install -y awscli
+                fi
+                '''
             }
         }
 
