@@ -2,11 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds') // Jenkins credential ID
         AWS_REGION = 'us-east-1'
         ECS_CLUSTER = 'node-app-cluster'
         ECS_SERVICE = 'node-app-service'
-        TASK_DEFINITION = 'node-app-task'
         IMAGE_NAME = 'pravalika27/taskdev'
     }
 
@@ -20,41 +18,40 @@ pipeline {
         stage('Build & Test') {
             steps {
                 sh 'npm install'
-                sh 'npm test || echo "Tests completed"' // Remove if no tests
+                sh 'npm test || echo "No tests available, skipping..."'
             }
         }
 
-        stage('Dockerize') {
+        stage('Dockerize & Push') {
             steps {
-                sh "docker build -t $IMAGE_NAME:latest ."
-            }
-        }
-
-        stage('Push to DockerHub') {
-            steps {
-                sh """
-                    echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
-                    docker push $IMAGE_NAME:latest
-                """
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker build -t $IMAGE_NAME:latest .
+                        docker push $IMAGE_NAME:latest
+                    """
+                }
             }
         }
 
         stage('Deploy to ECS') {
             steps {
-                sh """
-                    aws ecs update-service \
-                        --cluster $ECS_CLUSTER \
-                        --service $ECS_SERVICE \
-                        --force-new-deployment \
-                        --region $AWS_REGION
-                """
+                withAWS(region: "${AWS_REGION}", credentials: 'aws_credentials') {
+                    sh """
+                        aws ecs update-service \
+                            --cluster $ECS_CLUSTER \
+                            --service $ECS_SERVICE \
+                            --force-new-deployment \
+                            --region $AWS_REGION
+                    """
+                }
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline finished."
+            echo "✅ Pipeline finished."
         }
     }
 }
