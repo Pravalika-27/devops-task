@@ -12,6 +12,8 @@ pipeline {
         ECS_SERVICE = 'node-app-service'
         TASK_DEFINITION = 'node-app-task'
         IMAGE_NAME = 'pravalika27/taskdev'
+        GIT_COMMIT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        IMAGE_TAG = "${GIT_COMMIT}"
     }
 
     stages {
@@ -24,13 +26,21 @@ pipeline {
         stage('Build & Test') {
             steps {
                 sh 'npm install'
-                sh 'npm test || echo "No tests found"'
+                // Check if test script exists, skip if not
+                script {
+                    def hasTest = sh(script: "jq -e '.scripts.test' package.json", returnStatus: true) == 0
+                    if (hasTest) {
+                        sh 'npm test'
+                    } else {
+                        echo "No tests found, skipping test stage"
+                    }
+                }
             }
         }
 
         stage('Dockerize') {
             steps {
-                sh "docker build -t $IMAGE_NAME:latest ."
+                sh "docker build -t $IMAGE_NAME:latest -t $IMAGE_NAME:$IMAGE_TAG ."
             }
         }
 
@@ -40,6 +50,7 @@ pipeline {
                     sh """
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
                         docker push $IMAGE_NAME:latest
+                        docker push $IMAGE_NAME:$IMAGE_TAG
                     """
                 }
             }
@@ -47,7 +58,6 @@ pipeline {
 
         stage('Deploy to ECS') {
             steps {
-                // Using AWS Credentials Plugin
                 withAWS(credentials: 'aws_credentials', region: "${AWS_REGION}") {
                     sh """
                         aws ecs update-service \
@@ -63,6 +73,9 @@ pipeline {
     post {
         always {
             echo "✅ Pipeline finished."
+        }
+        failure {
+            echo "❌ Pipeline failed."
         }
     }
 }
